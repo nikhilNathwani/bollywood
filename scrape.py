@@ -55,9 +55,22 @@ def analyzeActor(actor):
 	except:
 		return 0 #error code for 'URL choked'
 
-	table= soup.find('table',{"class":"findList"})
-	if table is None:
+
+	#make sure the search result is an actor Name, not a movie title or something else
+	headers= soup.find_all('h3',{'class':'findSectionHeader'})
+	if headers is None:
 		return 1 #error code for 'no IMDB results found'
+
+	#make sure the search result corresponds to an actor name, not a movie title or something else
+	isName= -1
+	for i, header in enumerate(headers):
+		if header.text == "Names":
+			isName= i
+	if isName == -1:
+		return 1.5 #there are search results, but none of them are names of actors 
+	
+	#grab actor name search results
+	table= headers[isName].find_next_sibling('table',{"class":"findList"})
 
 
 	#enter actor's page
@@ -93,9 +106,12 @@ def analyzeActor(actor):
 
 if __name__=="__main__":
 
+	print analyzeActor("Tabu")
+
+'''
 	actors= getActorsFromYear(2015)
 	for actor in actors: 
 		a= analyzeActor(actor)
 		if a < 4:
 			print actor, a
-
+'''
