@@ -1,7 +1,47 @@
 from util import *
+import sqlite3
 
 relations= ["great-great-grandson of","great-grandson of","granddson of","son of","great-great-granddaughter of","great-granddaughter of","granddaughter of","daughter of","sister of","brother of","nephew of","niece of"]
 industryTitles= ["actress","actor","director","producer","writer"]
+
+
+def buildTables(year):
+	#movie list that'll eventually be thrown into tables via sqlite
+	movieData= []
+	#no actorData list because actor table will be constructed on the fly in the for loops 
+
+	#get rows for movies from year X
+	movies= getMoviesFromYear(year)
+
+	for movie in movies:
+		#analyze actors for this movie
+		actors= movie['cast']
+
+		# if cast is empty, skip over this movie, else analyze its actors
+		if actors!=[]:
+			for actor in actors:
+				actorID= addActorData(actor)
+				movieData.append([movie['title'],year,movie['genre'],movie['director'],actorID])
+
+	addMovieData(movies)
+
+	print "Actor and Movie data added to tables."
+
+
+#returns list of {title, genre, director, cast} dicts
+def getMoviesFromYear(year):
+	pass
+
+#adds an actor to the actors table, and returns ID of actor
+#if actor already exists in table, doesn't re-add, just returns its ID
+def addActorData(actor):
+	pass
+
+#takes list of movie data and inserts it into movies table
+#has no return value
+def addMovieData(movies):
+	pass
+
 
 #return list of bollywood movies released in 2015
 def getActorsFromYear(year):
@@ -130,22 +170,26 @@ def isInIndustry(bioUrl):
 				return (True, t)
 	return (False, "")
 				
-				
-
 
 if __name__=="__main__":
 #	a= analyzeActor("Priyanka Chopra")
 #	print isLineage(a[1])
 
+#	actors= getActorsFromYear(2015)
+#	for actor in actors: 
+#		a= analyzeActor(actor)
+#		if a[0] == 4:
+#			print actor
+#			print isLineage(a[1])
+#			print "\n\n"
 
-	actors= getActorsFromYear(2015)
-	for actor in actors: 
-		a= analyzeActor(actor)
-		if a[0] == 4:
-			print actor
-			print isLineage(a[1])
-			print "\n\n"
+	
+	db = sqlite3.connect('bollywood.db')
+	c= db.cursor()
 
+	c.execute('''INSERT INTO actor(name, resultCode, hasTrivia, triviaUrL, isLegacy, relatedToActor, relatedToDirector, relatedToProducer, relatedToWriter, isModel) VALUES(?,?,?,?,?,?,?,?,?)''', ("Nikhil",0,True,"abc",False,False,False,False,False,True))
 
+	db.commit()
+	db.close()
 
 
