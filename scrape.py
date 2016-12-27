@@ -1,5 +1,7 @@
 from util import *
 
+relations= ["great-great-grandson of","great-grandson of","granddson of","son of","great-great-granddaughter of","great-granddaughter of","granddaughter of","daughter of","sister of","brother of","nephew of","niece of"]
+industryTitles= ["actress","actor","director","producer","writer"]
 
 #return list of bollywood movies released in 2015
 def getActorsFromYear(year):
@@ -53,13 +55,13 @@ def analyzeActor(actor):
 	try:
 		soup= grabSiteData(imdbLink)
 	except:
-		return 0 #error code for 'URL choked'
+		return (0,[]) #error code for 'URL choked'
 
 
 	#make sure the search result is an actor Name, not a movie title or something else
 	headers= soup.find_all('h3',{'class':'findSectionHeader'})
 	if headers is None:
-		return 1 #error code for 'no IMDB results found'
+		return (1,[]) #error code for 'no IMDB results found'
 
 	#make sure the search result corresponds to an actor name, not a movie title or something else
 	isName= -1
@@ -67,7 +69,7 @@ def analyzeActor(actor):
 		if header.text == "Names":
 			isName= i
 	if isName == -1:
-		return 1.5 #there are search results, but none of them are names of actors 
+		return (1.5,[]) #there are search results, but none of them are names of actors 
 	
 	#grab actor name search results
 	table= headers[isName].find_next_sibling('table',{"class":"findList"})
@@ -80,12 +82,12 @@ def analyzeActor(actor):
 	
 	overview= soup.find("td",{"id":"overview-top"})
 	if overview is None: #THIS MIGHT NOT BE NECESSARY! Keep an eye and see if 2 ever comes up. So far all 2.5
-		return 2 #error code for 'IMDB result exists, but no bio'
+		return (2,[]) #error code for 'IMDB result exists, but no bio'
 
 	seeMore= overview.find("span",{"class":"see-more"})
 	
 	if seeMore is None:
-		return 2.5 #error code for 'IMDB result exists, but no bio'
+		return (2.5,[]) #error code for 'IMDB result exists, but no bio'
 	
 	bioUrlAppend= seeMore.find('a')['href']
 	soup= grabSiteData("http://www.imdb.com"+bioUrlAppend)
@@ -97,21 +99,53 @@ def analyzeActor(actor):
 		if "Trivia" in group.text:
 			hasTrivia= i
 	if hasTrivia == -1:
-		return 3 #error code for Full bio exists, but no trivia section'
+		return (3,[]) #error code for Full bio exists, but no trivia section'
 
 	#grab trivia items
 	trivia= groups[hasTrivia].find_next_siblings('div',{"class":"soda"})
-	return 4
+	return (4,trivia)
+
+#returns boolean of whether the actor has familial connections to the industry
+def isLineage(trivia):
+	for item in trivia:
+		for relation in relations:
+			if relation in item.text.lower():
+				link= item.find('a')
+				if link is not None:
+					relative= {'relation':relation, "name":link.text}
+					print relative
+					i= isInIndustry(link['href'])
+					if i[0]:
+						relative["job"]= i[1]
+						return (True, relative)
+	return (False, {})
+
+def isInIndustry(bioUrl):
+	soup= grabSiteData("http://www.imdb.com"+bioUrl)
+	jobs= soup.find("div",{"class":"infobar","id":"name-job-categories"})
+	jobTitles= jobs.find_all("span")
+	for title in jobTitles:
+		for t in industryTitles: 
+			if t in title.text.lower():
+				return (True, t)
+	return (False, "")
+				
+				
 
 
 if __name__=="__main__":
+#	a= analyzeActor("Priyanka Chopra")
+#	print isLineage(a[1])
 
-	print analyzeActor("Tabu")
 
-'''
 	actors= getActorsFromYear(2015)
 	for actor in actors: 
 		a= analyzeActor(actor)
-		if a < 4:
-			print actor, a
-'''
+		if a[0] == 4:
+			print actor
+			print isLineage(a[1])
+			print "\n\n"
+
+
+
+
