@@ -29,8 +29,55 @@ def buildTables(year):
 
 
 #returns list of {title, genre, director, cast} dicts
+#for now, assumes the year is 2014 or 2015. 
 def getMoviesFromYear(year):
-	pass
+	#year can only be in certain range
+	if year not in [2014,2015]:
+		raise ValueError("Year must be in [2014,2015]") 
+
+	wikiURL= 'https://en.wikipedia.org/wiki/List_of_Bollywood_films_of_'+str(year)
+	soup= grabSiteData(wikiURL)
+
+	#there's 4 tables, one for each quarter-year
+	#consolidating all rows into one list
+	tables= soup.find_all('table',class_='sortable')
+	rows= []
+	for table in tables:
+		rows += table.find_all('tr')[1:] #skip 1st row bc it's the table header
+
+	movies= []
+	for row in rows:
+		movie= {}
+		data= row.find_all('td')
+
+		#movie title
+		link= data[1].find('a')
+		movie['title']= data[1].text if link == None else link.text
+		movie['title']= movie['title'].encode('ascii', 'ignore')
+
+		#genre
+		link= data[2].find('a')
+		movie['genre']= data[2].text if link == None else link.text
+		movie['genre']= movie['genre'].encode('ascii', 'ignore')
+
+		#director
+		link= data[2].find('a')
+		movie['director']= data[3].text if link == None else link.text
+		movie['director']= movie['director'].encode('ascii', 'ignore')
+
+		#cast
+		#RISK: only looks at actors within an <a> tag for now
+		cast= data[4]
+		actors= cast.find_all('a')
+		if actors == None:
+			movie['cast']= [] 
+		else:
+			movie['cast']= [actorLink.text.encode('ascii', 'ignore') for actorLink in actors]
+
+		movies.append(movie)
+
+	return movies
+
 
 #adds an actor to the actors table, and returns ID of actor
 #if actor already exists in table, doesn't re-add, just returns its ID
@@ -184,12 +231,9 @@ if __name__=="__main__":
 #			print "\n\n"
 
 	
-	db = sqlite3.connect('bollywood.db')
-	c= db.cursor()
-
-	c.execute('''INSERT INTO actor(name, resultCode, hasTrivia, triviaUrL, isLegacy, relatedToActor, relatedToDirector, relatedToProducer, relatedToWriter, isModel) VALUES(?,?,?,?,?,?,?,?,?)''', ("Nikhil",0,True,"abc",False,False,False,False,False,True))
-
-	db.commit()
-	db.close()
+	movies= getMoviesFromYear(2014)
+	for m in movies:
+		print '\n\n'
+		print m
 
 
