@@ -12,8 +12,11 @@ def buildTables(year):
 
 	#get rows for movies from year X
 	movies= getMoviesFromYear(year)
+	numMovies= len(movies)
 
-	for movie in movies:
+	for i,movie in enumerate(movies):
+		print "Movie",i,"of",numMovies,"Movies"
+
 		#analyze actors for this movie
 		actors= movie['cast']
 
@@ -21,6 +24,7 @@ def buildTables(year):
 		if actors!=[]:
 			for actor in actors:
 				actorID= addActorData(actor)
+				print actorID, actor, "\n\n"
 				movieData.append([movie['title'],year,movie['genre'],movie['director'],actorID])
 
 	addMovieData(movies)
@@ -82,7 +86,25 @@ def getMoviesFromYear(year):
 #adds an actor to the actors table, and returns ID of actor
 #if actor already exists in table, doesn't re-add, just returns its ID
 def addActorData(actor):
-	pass
+	db = sqlite3.connect('bollywood.db')
+	cursor= db.cursor()
+	#RISK: name collisions will cause issues
+	cursor.execute('''SELECT id FROM actors WHERE name=?''', (actor,))
+	actor1= cursor.fetchone()
+
+	if actor1 != None:
+		return actor1[0]
+	else:
+		resultCode,triviaUrl,trivData= analyzeActor(actor)
+		hasTrivia= (triviaUrl!="")
+		isLegacy= isLineage(trivData)[0]
+
+		db = sqlite3.connect('bollywood.db')
+		cursor= db.cursor()
+		cursor.execute('''INSERT INTO actors(name, resultCode, hasTrivia, triviaUrL, isLegacy, relatedToActor, relatedToDirector, relatedToProducer, relatedToWriter, isModel)
+	                  VALUES(?,?,?,?,?,?,?,?,?,?)''', (actor,resultCode,hasTrivia,triviaUrl,isLegacy,None,None,None,None,None))
+		db.commit()
+		return cursor.lastrowid
 
 #takes list of movie data and inserts it into movies table
 #has no return value
@@ -128,10 +150,12 @@ def analyzeActor(actor):
 	#possible categorizations
 	#  0: URL choked
 	#  1: no IMDB results found
-	#  2: IMDB result exists, but no bio
-	#  3: Full bio exists, but no trivia section
-	#  4: Trivia section exists, but none of my keywords found
-	#  5: Trivia section exists, and one of my keywords is found
+	#  2: there are search results, but none of them are names of actors 
+	#  3: IMDB result exists, but no bio
+	#  4: IMDB result and overview exists, but no See More for full page bio
+	#  5: Full bio exists, but no trivia section
+	#  6: Trivia section exists, but none of my keywords found
+	#  7: Trivia section exists, and one of my keywords is found
 
 	#incoming (wiki) format: "[first name] [last name]"
 	#outgoing (imdb) format: "[first name]+[last name]
@@ -142,13 +166,13 @@ def analyzeActor(actor):
 	try:
 		soup= grabSiteData(imdbLink)
 	except:
-		return (0,[]) #error code for 'URL choked'
+		return (0,"",[]) #error code for 'URL choked'
 
 
 	#make sure the search result is an actor Name, not a movie title or something else
 	headers= soup.find_all('h3',{'class':'findSectionHeader'})
 	if headers is None:
-		return (1,[]) #error code for 'no IMDB results found'
+		return (1,"",[]) #error code for 'no IMDB results found'
 
 	#make sure the search result corresponds to an actor name, not a movie title or something else
 	isName= -1
@@ -156,7 +180,7 @@ def analyzeActor(actor):
 		if header.text == "Names":
 			isName= i
 	if isName == -1:
-		return (1.5,[]) #there are search results, but none of them are names of actors 
+		return (2,"",[]) #there are search results, but none of them are names of actors 
 	
 	#grab actor name search results
 	table= headers[isName].find_next_sibling('table',{"class":"findList"})
@@ -169,15 +193,18 @@ def analyzeActor(actor):
 	
 	overview= soup.find("td",{"id":"overview-top"})
 	if overview is None: #THIS MIGHT NOT BE NECESSARY! Keep an eye and see if 2 ever comes up. So far all 2.5
-		return (2,[]) #error code for 'IMDB result exists, but no bio'
+		return (3,"",[]) #error code for 'IMDB result exists, but no bio'
 
 	seeMore= overview.find("span",{"class":"see-more"})
 	
 	if seeMore is None:
-		return (2.5,[]) #error code for 'IMDB result exists, but no bio'
+		return (4,"",[]) #error code for 'IMDB result and overview exists, but no see more'
 	
-	bioUrlAppend= seeMore.find('a')['href']
-	soup= grabSiteData("http://www.imdb.com"+bioUrlAppend)
+	try:
+		bioUrlAppend= seeMore.find('a')['href']
+		soup= grabSiteData("http://www.imdb.com"+bioUrlAppend)
+	except httplib.BadStatusLine:
+		print actor, bioUrlAppend
 
 	#enter the full bio
 	groups= soup.find_all('h4',{'class':'li_group'})
@@ -186,14 +213,16 @@ def analyzeActor(actor):
 		if "Trivia" in group.text:
 			hasTrivia= i
 	if hasTrivia == -1:
-		return (3,[]) #error code for Full bio exists, but no trivia section'
+		return (5,"",[]) #error code for Full bio exists, but no trivia section'
 
 	#grab trivia items
 	trivia= groups[hasTrivia].find_next_siblings('div',{"class":"soda"})
-	return (4,trivia)
+
+	return (6,"http://www.imdb.com"+bioUrlAppend,trivia)
+
 
 #returns boolean of whether the actor has familial connections to the industry
-def isLineage(trivia):
+def isLineage(trivia):	
 	for item in trivia:
 		for relation in relations:
 			if relation in item.text.lower():
@@ -210,6 +239,8 @@ def isLineage(trivia):
 def isInIndustry(bioUrl):
 	soup= grabSiteData("http://www.imdb.com"+bioUrl)
 	jobs= soup.find("div",{"class":"infobar","id":"name-job-categories"})
+	if jobs==None:
+		return (False, "")
 	jobTitles= jobs.find_all("span")
 	for title in jobTitles:
 		for t in industryTitles: 
@@ -231,9 +262,22 @@ if __name__=="__main__":
 #			print "\n\n"
 
 	
-	movies= getMoviesFromYear(2014)
-	for m in movies:
-		print '\n\n'
-		print m
+#	movies= getMoviesFromYear(2014)
+#	for m in movies:
+#		print '\n\n'
+#		print m
+
+	buildTables(2014)
+
+#	db = sqlite3.connect('bollywood.db')
+#	cursor= db.cursor()
+	#RISK: name collisions will cause issues
+	#cursor.execute('''INSERT INTO actors(name, resultCode, hasTrivia, triviaUrL, isLegacy, relatedToActor, relatedToDirector, relatedToProducer, relatedToWriter, isModel)
+	#                  VALUES(?,?,?,?,?,?,?,?,?,?)''', ("Bum",0,True,"",True,True,False,0,0,0))
+	#db.commit()
+#	cursor.execute('''SELECT id FROM actors WHERE name=?''', ("Bum",))
+#	user1= cursor.fetchone()
+#	print user1[0]
+
 
 
