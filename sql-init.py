@@ -11,6 +11,7 @@ c.execute('''
 	id INTEGER PRIMARY KEY ASC, 
 	name varchar(250) NOT NULL,
 	resultCode INTEGER NOT NULL,
+	birthday TEXT,
 	hasTrivia BOOLEAN,
 	triviaURL TEXT,
 	isLegacy BOOLEAN,

@@ -16,6 +16,7 @@ def buildTables(year):
 
 	for i,movie in enumerate(movies):
 		print "Movie",i,"of",numMovies,"Movies"
+		print movie
 
 		#analyze actors for this movie
 		actors= movie['cast']
@@ -24,10 +25,8 @@ def buildTables(year):
 		if actors!=[]:
 			for actor in actors:
 				actorID= addActorData(actor)
-				print actorID, actor, "\n\n"
-				movieData.append([movie['title'],year,movie['genre'],movie['director'],actorID])
-
-	addMovieData(movies)
+				print "\n\n",actorID, actor
+				addMovieData([movie['title'],year,movie['genre'],movie['director'],actorID])
 
 	print "Actor and Movie data added to tables."
 
@@ -95,23 +94,33 @@ def addActorData(actor):
 	if actor1 != None:
 		return actor1[0]
 	else:
-		resultCode,triviaUrl,trivData= analyzeActor(actor)
+		resultCode,birthday,triviaUrl,trivData= analyzeActor(actor)
 		hasTrivia= (triviaUrl!="")
 		isLegacy= isLineage(trivData)[0]
 
 		db = sqlite3.connect('bollywood.db')
 		cursor= db.cursor()
-		cursor.execute('''INSERT INTO actors(name, resultCode, hasTrivia, triviaUrL, isLegacy, relatedToActor, relatedToDirector, relatedToProducer, relatedToWriter, isModel)
-	                  VALUES(?,?,?,?,?,?,?,?,?,?)''', (actor,resultCode,hasTrivia,triviaUrl,isLegacy,None,None,None,None,None))
+		cursor.execute('''INSERT INTO actors(name, resultCode, birthday, hasTrivia, triviaUrL, isLegacy, relatedToActor, relatedToDirector, relatedToProducer, relatedToWriter, isModel)
+	                  VALUES(?,?,?,?,?,?,?,?,?,?,?)''', (actor,resultCode,birthday,hasTrivia,triviaUrl,isLegacy,None,None,None,None,None))
 		db.commit()
 		return cursor.lastrowid
 
-#takes list of movie data and inserts it into movies table
+#takes movie data and inserts it into movies table
 #has no return value
-def addMovieData(movies):
-	pass
+def addMovieData(movie):
+	db = sqlite3.connect('bollywood.db')
+	cursor= db.cursor()
+	#RISK: name collisions will cause issues
+	cursor.execute('''SELECT name FROM movies WHERE name=? AND year=? AND actor_id=?''', (movie[0],movie[1],movie[-1]))
+	movie1= cursor.fetchone()
+	if movie1 == None:
+		cursor.execute(''' INSERT INTO movies(name, year, genre, director, actor_id) 
+						VALUES(?,?,?,?,?)''', movie)
+		db.commit()
 
+		print "Added movie:", movie
 
+#TO DO: Add AGE to this! 
 #return list of bollywood movies released in 2015
 def getActorsFromYear(year):
 	
@@ -146,6 +155,7 @@ def getActorsFromYear(year):
 	return actors
 
 
+#returns (resultCode, birthday, triviaUrl, trivia) tuple
 def analyzeActor(actor):
 	#possible categorizations
 	#  0: URL choked
@@ -166,13 +176,13 @@ def analyzeActor(actor):
 	try:
 		soup= grabSiteData(imdbLink)
 	except:
-		return (0,"",[]) #error code for 'URL choked'
+		return (0,None,"",[]) #error code for 'URL choked'
 
 
 	#make sure the search result is an actor Name, not a movie title or something else
 	headers= soup.find_all('h3',{'class':'findSectionHeader'})
 	if headers is None:
-		return (1,"",[]) #error code for 'no IMDB results found'
+		return (1,None,"",[]) #error code for 'no IMDB results found'
 
 	#make sure the search result corresponds to an actor name, not a movie title or something else
 	isName= -1
@@ -180,7 +190,7 @@ def analyzeActor(actor):
 		if header.text == "Names":
 			isName= i
 	if isName == -1:
-		return (2,"",[]) #there are search results, but none of them are names of actors 
+		return (2,None,"",[]) #there are search results, but none of them are names of actors 
 	
 	#grab actor name search results
 	table= headers[isName].find_next_sibling('table',{"class":"findList"})
@@ -193,12 +203,21 @@ def analyzeActor(actor):
 	
 	overview= soup.find("td",{"id":"overview-top"})
 	if overview is None: #THIS MIGHT NOT BE NECESSARY! Keep an eye and see if 2 ever comes up. So far all 2.5
-		return (3,"",[]) #error code for 'IMDB result exists, but no bio'
+		return (3,None,"",[]) #error code for 'IMDB result exists, but no bio
+
+	#get birthday
+	birthdayDiv= overview.find("div",{"id":"name-born-info"})
+	if birthdayDiv==None:
+		birthday= None  
+	elif birthdayDiv.find("time") == None:
+		birthday= None
+	else:
+		birthday= birthdayDiv.find("time")["datetime"]
 
 	seeMore= overview.find("span",{"class":"see-more"})
 	
 	if seeMore is None:
-		return (4,"",[]) #error code for 'IMDB result and overview exists, but no see more'
+		return (4,None,"",[]) #error code for 'IMDB result and overview exists, but no see more'
 	
 	try:
 		bioUrlAppend= seeMore.find('a')['href']
@@ -213,12 +232,12 @@ def analyzeActor(actor):
 		if "Trivia" in group.text:
 			hasTrivia= i
 	if hasTrivia == -1:
-		return (5,"",[]) #error code for Full bio exists, but no trivia section'
+		return (5,None,"",[]) #error code for Full bio exists, but no trivia section'
 
 	#grab trivia items
 	trivia= groups[hasTrivia].find_next_siblings('div',{"class":"soda"})
 
-	return (6,"http://www.imdb.com"+bioUrlAppend,trivia)
+	return (6,birthday,"http://www.imdb.com"+bioUrlAppend,trivia)
 
 
 #returns boolean of whether the actor has familial connections to the industry
@@ -267,10 +286,27 @@ if __name__=="__main__":
 #		print '\n\n'
 #		print m
 
-	buildTables(2014)
-
 #	db = sqlite3.connect('bollywood.db')
 #	cursor= db.cursor()
+#	cursor.execute('''DROP TABLE movies''')
+#	cursor.execute('''
+#		CREATE TABLE movies (
+#		id INTEGER PRIMARY KEY ASC, 
+#		name varchar(250) NOT NULL, 
+#		year INTEGER, 
+#		genre TEXT,
+#		director TEXT,
+#		actor_id INTEGER NOT NULL, 
+#		FOREIGN KEY(actor_id) REFERENCES actor(id)
+#		)'''
+#	)
+
+#	db.commit()
+
+	buildTables(2015)
+
+	#db = sqlite3.connect('bollywood.db')
+	#cursor= db.cursor()
 	#RISK: name collisions will cause issues
 	#cursor.execute('''INSERT INTO actors(name, resultCode, hasTrivia, triviaUrL, isLegacy, relatedToActor, relatedToDirector, relatedToProducer, relatedToWriter, isModel)
 	#                  VALUES(?,?,?,?,?,?,?,?,?,?)''', ("Bum",0,True,"",True,True,False,0,0,0))
